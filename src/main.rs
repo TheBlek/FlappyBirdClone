@@ -5,6 +5,30 @@ const GRAVITY: f32 = -2000.0;
 const ANGLE_AMPLITUDE: f32 = 0.8;
 const PIPE_WINDOW_SIZE: f32 = 200.0;
 
+type LoadCallback = Box<dyn Send + Sync + FnOnce(Vec<HandleUntyped>, &mut Commands)>;
+
+struct LoadingBundle {
+    handles: Vec<HandleUntyped>,
+    on_load: LoadCallback,
+}
+
+#[derive(Resource, Default)]
+struct LoadingAssets(Vec<LoadingBundle>);
+
+impl std::ops::Deref for LoadingAssets {
+    type Target = Vec<LoadingBundle>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for LoadingAssets {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[derive(Component)]
 struct Velocity(Vec3);
 
@@ -18,7 +42,33 @@ struct PlayerBundle {
     marker: Player,
 }
 
-fn startup(mut commands: Commands, asset_server: Res<AssetServer>, images: Res<Assets<Image>>) {
+fn post_loading(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut bundles: ResMut<LoadingAssets>,
+) {
+    use bevy::asset::LoadState::*;
+    let mut i = 0;
+    while i < bundles.len() {
+        let loaded = bundles[i]
+            .handles
+            .iter()
+            .all(|handle| matches!(asset_server.get_load_state(handle), Loaded));
+
+        if loaded {
+            let bundle = bundles.remove(i);
+            (bundle.on_load)(bundle.handles, &mut commands);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+fn startup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut loading_assets: ResMut<LoadingAssets>,
+) {
     commands.spawn(Camera2dBundle::default());
     commands.spawn(PlayerBundle {
         sprite: SpriteBundle {
@@ -29,27 +79,36 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>, images: Res<A
         marker: Player,
     });
 
-    let pipe_start = asset_server.load("sprites/pipe.png");
-    let pipe_start_height = images.get(&pipe_start).unwrap().size().y;
+    loading_assets.push(LoadingBundle {
+        handles: vec![
+            asset_server.load_untyped("sprites/pipe.png"),
+            asset_server.load_untyped("sprites/pipe_piece.png"),
+        ],
+        on_load: Box::new(|handles, _| {
 
-    let pipe_segment = asset_server.load("sprites/pipe_piece.png");
-    let pipe_segment_height = images.get(&pipe_segment).unwrap().size().y;
+        }),
+    });
+    // let pipe_segment = asset_server.load("sprites/pipe_piece.png");
 
-    let lower_pipe_bundle = SpriteBundle {
-        texture: pipe_start,
-        transform: Transform {
-            translation: Vec3::Y * -(pipe_start_height + PIPE_WINDOW_SIZE)/2.0,
-            ..default()
-        },
-        ..default()
-    };
+    // let pipe_start_height = images.get(&pipe_start).unwrap().size().y;
 
-    let mut higher_pipe_bundle = lower_pipe_bundle.clone();
-    higher_pipe_bundle.sprite.flip_y = true;
-    higher_pipe_bundle.transform.translation *= -1.0;
+    // let pipe_segment_height = images.get(&pipe_segment).unwrap().size().y;
 
-    commands.spawn(lower_pipe_bundle);
-    commands.spawn(higher_pipe_bundle);
+    // let lower_pipe_bundle = SpriteBundle {
+    //     texture: pipe_start,
+    //     transform: Transform {
+    //         translation: Vec3::Y * -(pipe_start_height + PIPE_WINDOW_SIZE) / 2.0,
+    //         ..default()
+    //     },
+    //     ..default()
+    // };
+
+    // let mut higher_pipe_bundle = lower_pipe_bundle.clone();
+    // higher_pipe_bundle.sprite.flip_y = true;
+    // higher_pipe_bundle.transform.translation *= -1.0;
+
+    // commands.spawn(lower_pipe_bundle);
+    // commands.spawn(higher_pipe_bundle);
 }
 
 fn jump(keyboard_input: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, With<Player>>) {
@@ -85,6 +144,8 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_startup_system(startup)
+        .init_resource::<LoadingAssets>()
+        .add_system(post_loading)
         .add_systems((
             jump,
             apply_gravity.after(jump),
