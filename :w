@@ -10,9 +10,8 @@ const PIPE_WINDOW_SIZE: f32 = 250.0;
 const PIPE_START_SPEED: f32 = 100.0;
 const PIPE_MAX_SPEED: f32 = 1000.0;
 const PIPE_TIME_TO_MAX: f32 = 60.0;
-const PIPE_GAP: f32 = 500.0;
 
-static WINDOW_SIZE: OnceLock<WindowResolution> = OnceLock::new();
+static WINDOW_SIZE: OnceLock::<WindowResolution> = OnceLock::new();
 
 type LoadCallback = Box<dyn Send + Sync + FnOnce(Vec<HandleUntyped>, &mut Commands)>;
 
@@ -81,7 +80,10 @@ fn post_loading(
     }
 }
 
-fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn startup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
     commands.spawn(Camera2dBundle::default());
     commands.spawn(PlayerBundle {
         sprite: SpriteBundle {
@@ -118,52 +120,42 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let mut rng = rand::thread_rng();
 
     let mut spawn_pipe = |x: f32| {
-        commands
-            .spawn((
-                Movable {
-                    acceleration: Vec3::NEG_X * (PIPE_MAX_SPEED - PIPE_START_SPEED)
-                        / PIPE_TIME_TO_MAX,
-                    velocity: Vec3::NEG_X * PIPE_START_SPEED,
-                },
-                SpriteBundle {
-                    transform: Transform {
-                        translation: Vec3 {
-                            x,
-                            y: rng.gen(),
-                            ..default()
-                        },
+        commands.spawn((Movable {
+                acceleration: Vec3::NEG_X * (PIPE_MAX_SPEED - PIPE_START_SPEED) / PIPE_TIME_TO_MAX,
+                velocity: Vec3::NEG_X * PIPE_START_SPEED,
+            },
+            SpriteBundle {
+                transform: Transform {
+                    translation: Vec3 {
+                        x,
+                        y: rng.gen(),
                         ..default()
                     },
                     ..default()
                 },
-            ))
+                ..default()
+            }))
             .with_children(|parent| {
-                parent
-                    .spawn(lower_pipe_bundle.clone())
+                parent.spawn(lower_pipe_bundle.clone())
                     .with_children(|parent| {
                         for i in 0..10 {
                             parent.spawn(SpriteBundle {
                                 texture: pipe_segment.clone(),
                                 transform: Transform {
-                                    translation: Vec3::NEG_Y
-                                        * pipe_segment_height
-                                        * (1 + 2 * i) as f32
-                                        / 2.0,
+                                    translation: Vec3::NEG_Y * pipe_segment_height * (1 + 2 * i) as f32 / 2.0,
                                     ..default()
                                 },
                                 ..default()
                             });
                         }
                     });
-                parent
-                    .spawn(upper_pipe_bundle.clone())
+                parent.spawn(upper_pipe_bundle.clone())
                     .with_children(|parent| {
                         for i in 0..10 {
                             parent.spawn(SpriteBundle {
                                 texture: pipe_segment.clone(),
                                 transform: Transform {
-                                    translation: Vec3::Y * pipe_segment_height * (1 + 2 * i) as f32
-                                        / 2.0,
+                                    translation: Vec3::Y * pipe_segment_height * (1 + 2 * i) as f32 / 2.0,
                                     ..default()
                                 },
                                 ..default()
@@ -172,10 +164,8 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     });
             });
     };
-    let right_border = WINDOW_SIZE.get().unwrap().width() / 2.0 + 50.0;
-    for i in 0..10 {
-        spawn_pipe(right_border + i as f32 * PIPE_GAP);
-    }
+    spawn_pipe(WINDOW_SIZE.get().unwrap().width.);
+    spawn_pipe(100.0);
 }
 
 fn jump(keyboard_input: Res<Input<KeyCode>>, mut query: Query<&mut Movable, With<Player>>) {
@@ -188,8 +178,7 @@ fn jump(keyboard_input: Res<Input<KeyCode>>, mut query: Query<&mut Movable, With
 fn rotate(mut query: Query<(&mut Transform, &Movable), With<Player>>) {
     for (mut transform, movable) in &mut query {
         use std::f32::consts::FRAC_PI_2;
-        let angle =
-            ((movable.velocity.y / UP_SPEED) * ANGLE_AMPLITUDE).clamp(-FRAC_PI_2, FRAC_PI_2);
+        let angle = ((movable.velocity.y / UP_SPEED) * ANGLE_AMPLITUDE).clamp(-FRAC_PI_2, FRAC_PI_2);
         transform.rotation = Quat::from_axis_angle(Vec3::Z, angle);
     }
 }
@@ -209,14 +198,12 @@ fn apply_velocity(time: Res<Time>, mut query: Query<(&Movable, &mut Transform)>)
 }
 
 fn main() {
-    WINDOW_SIZE
-        .set(WindowResolution::new(720.0, 1280.0))
-        .expect("Could not initialize window resolution");
+    WINDOW_SIZE.set(WindowResolution::new(720.0, 1280.0)).expect("Could not initialize window resolution");
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                resolution: WINDOW_SIZE.get().unwrap().clone(),
-                ..default()
+                    resolution: WINDOW_SIZE.get().unwrap().clone(),
+                    ..default()
             }),
             ..default()
         }))
