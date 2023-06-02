@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use bevy::{prelude::*, window::WindowResolution};
+use bevy::{prelude::*, window::{WindowResolution, WindowMode}};
 use rand::Rng;
 
 const UP_SPEED: f32 = 500.0;
@@ -47,10 +47,15 @@ struct Movable {
 #[derive(Component, Default)]
 struct Player;
 
-// #[derive(Bundle, Default)]
-// struct PipeBundle {
-//     movable: Movable,
-// }
+#[derive(Component, Default)]
+struct Pipe;
+
+#[derive(Bundle, Default)]
+struct PipeBundle {
+    movable: Movable,
+    sprite: SpriteBundle, // for computer visibility and global transform
+    marker: Pipe,
+}
 
 #[derive(Bundle, Default)]
 struct PlayerBundle {
@@ -119,13 +124,13 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     let mut spawn_pipe = |x: f32| {
         commands
-            .spawn((
-                Movable {
+            .spawn(PipeBundle {
+                movable: Movable {
                     acceleration: Vec3::NEG_X * (PIPE_MAX_SPEED - PIPE_START_SPEED)
                         / PIPE_TIME_TO_MAX,
                     velocity: Vec3::NEG_X * PIPE_START_SPEED,
                 },
-                SpriteBundle {
+                sprite: SpriteBundle {
                     transform: Transform {
                         translation: Vec3 {
                             x,
@@ -136,7 +141,8 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     },
                     ..default()
                 },
-            ))
+                ..default()
+            })
             .with_children(|parent| {
                 parent
                     .spawn(lower_pipe_bundle.clone())
@@ -172,7 +178,7 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     });
             });
     };
-    let right_border = WINDOW_SIZE.get().unwrap().width() / 2.0 + 50.0;
+    let right_border = WINDOW_SIZE.get().unwrap().width() / 2.0 + 100.0;
     for i in 0..10 {
         spawn_pipe(right_border + i as f32 * PIPE_GAP);
     }
@@ -208,14 +214,37 @@ fn apply_velocity(time: Res<Time>, mut query: Query<(&Movable, &mut Transform)>)
     }
 }
 
+fn reuse_pipes(mut query: Query<&mut Transform, With<Pipe>>) {
+    let left_border = -WINDOW_SIZE.get().unwrap().width() / 2.0 - 100.0;
+    let mut farther_position = query
+        .iter()
+        .map(|x| x.translation)
+        .max_by(|t1, t2| t1.x.partial_cmp(&t2.x).unwrap())
+        .unwrap();
+    for mut transform in &mut query {
+        if transform.translation.x < left_border {
+            transform.translation = farther_position;
+            transform.translation.x += PIPE_GAP;
+            farther_position = transform.translation;
+        }
+    }
+}
+
 fn main() {
     WINDOW_SIZE
-        .set(WindowResolution::new(720.0, 1280.0))
+        .set(WindowResolution::new(1280.0, 720.0))
         .expect("Could not initialize window resolution");
+    println!(
+        "Width: {}, Height: {}",
+        WINDOW_SIZE.get().unwrap().width(),
+        WINDOW_SIZE.get().unwrap().height(),
+    );
+
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 resolution: WINDOW_SIZE.get().unwrap().clone(),
+                mode: WindowMode::Windowed,
                 ..default()
             }),
             ..default()
@@ -228,6 +257,7 @@ fn main() {
             apply_acceleration.after(jump),
             apply_velocity.after(apply_acceleration),
             rotate.after(apply_acceleration),
+            reuse_pipes,
         ))
         .run();
 }
