@@ -3,7 +3,7 @@ use bevy::prelude::*;
 const UP_SPEED: f32 = 500.0;
 const GRAVITY: f32 = -2000.0;
 const ANGLE_AMPLITUDE: f32 = 0.8;
-const PIPE_WINDOW_SIZE: f32 = 200.0;
+const PIPE_WINDOW_SIZE: f32 = 250.0;
 
 type LoadCallback = Box<dyn Send + Sync + FnOnce(Vec<HandleUntyped>, &mut Commands)>;
 
@@ -67,7 +67,6 @@ fn post_loading(
 fn startup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut loading_assets: ResMut<LoadingAssets>,
 ) {
     commands.spawn(Camera2dBundle::default());
     commands.spawn(PlayerBundle {
@@ -79,36 +78,52 @@ fn startup(
         marker: Player,
     });
 
-    loading_assets.push(LoadingBundle {
-        handles: vec![
-            asset_server.load_untyped("sprites/pipe.png"),
-            asset_server.load_untyped("sprites/pipe_piece.png"),
-        ],
-        on_load: Box::new(|handles, _| {
+    // loading_assets.push(LoadingBundle {
+    //     handles: vec![
+    //         asset_server.load_untyped("sprites/pipe.png"),
+    //         asset_server.load_untyped("sprites/pipe_piece.png"),
+    //     ],
+    //     on_load: Box::new(|handles, _| {
+             
+    //     }),
+    // });
+    let pipe_start = asset_server.load("sprites/pipe.png");
+    let pipe_segment = asset_server.load("sprites/pipe_piece.png");
 
-        }),
-    });
-    // let pipe_segment = asset_server.load("sprites/pipe_piece.png");
+    let pipe_start_height = 192.0;
 
-    // let pipe_start_height = images.get(&pipe_start).unwrap().size().y;
+    let pipe_segment_height = 96.0;
 
-    // let pipe_segment_height = images.get(&pipe_segment).unwrap().size().y;
+    let lower_pipe_bundle = SpriteBundle {
+        texture: pipe_start,
+        transform: Transform {
+            translation: Vec3::NEG_Y * (pipe_start_height + PIPE_WINDOW_SIZE) / 2.0,
+            ..default()
+        },
+        ..default()
+    };
 
-    // let lower_pipe_bundle = SpriteBundle {
-    //     texture: pipe_start,
-    //     transform: Transform {
-    //         translation: Vec3::Y * -(pipe_start_height + PIPE_WINDOW_SIZE) / 2.0,
-    //         ..default()
-    //     },
-    //     ..default()
-    // };
+    let mut higher_pipe_bundle = lower_pipe_bundle.clone();
+    higher_pipe_bundle.sprite.flip_y = true;
+    higher_pipe_bundle.transform.translation *= -1.0;
 
-    // let mut higher_pipe_bundle = lower_pipe_bundle.clone();
-    // higher_pipe_bundle.sprite.flip_y = true;
-    // higher_pipe_bundle.transform.translation *= -1.0;
-
-    // commands.spawn(lower_pipe_bundle);
-    // commands.spawn(higher_pipe_bundle);
+    let segment_offset = lower_pipe_bundle.transform.translation.y;
+    println!("{}", lower_pipe_bundle.transform.translation.y);
+    println!("{}", segment_offset);
+    commands.spawn(lower_pipe_bundle)
+        .with_children(|parent| {
+            for i in 0..10 {
+                parent.spawn(SpriteBundle {
+                    texture: pipe_segment.clone(),
+                    transform: Transform {
+                        translation: Vec3::Y * segment_offset + Vec3::X * 50.0,
+                        ..default()
+                    },
+                    ..default()
+                });
+            }
+        });
+    commands.spawn(higher_pipe_bundle);
 }
 
 fn jump(keyboard_input: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, With<Player>>) {
