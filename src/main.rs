@@ -1,6 +1,9 @@
 use std::sync::OnceLock;
 
-use bevy::{prelude::*, window::{WindowResolution, WindowMode}};
+use bevy::{
+    prelude::*,
+    window::{WindowMode, WindowResolution},
+};
 use rand::Rng;
 
 const UP_SPEED: f32 = 500.0;
@@ -11,32 +14,33 @@ const PIPE_START_SPEED: f32 = 100.0;
 const PIPE_MAX_SPEED: f32 = 1000.0;
 const PIPE_TIME_TO_MAX: f32 = 60.0;
 const PIPE_GAP: f32 = 500.0;
+const PIPE_COUNT: usize = 10;
 
 static WINDOW_SIZE: OnceLock<WindowResolution> = OnceLock::new();
 
-type LoadCallback = Box<dyn Send + Sync + FnOnce(Vec<HandleUntyped>, &mut Commands)>;
+// type LoadCallback = Box<dyn Send + Sync + FnOnce(Vec<HandleUntyped>, &mut Commands)>;
 
-struct LoadingBundle {
-    handles: Vec<HandleUntyped>,
-    on_load: LoadCallback,
-}
+// struct LoadingBundle {
+//     handles: Vec<HandleUntyped>,
+//     on_load: LoadCallback,
+// }
 
-#[derive(Resource, Default)]
-struct LoadingAssets(Vec<LoadingBundle>);
+// #[derive(Resource, Default)]
+// struct LoadingAssets(Vec<LoadingBundle>);
 
-impl std::ops::Deref for LoadingAssets {
-    type Target = Vec<LoadingBundle>;
+// impl std::ops::Deref for LoadingAssets {
+//     type Target = Vec<LoadingBundle>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
 
-impl std::ops::DerefMut for LoadingAssets {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+// impl std::ops::DerefMut for LoadingAssets {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.0
+//     }
+// }
 
 #[derive(Component, Default)]
 struct Movable {
@@ -50,10 +54,13 @@ struct Player;
 #[derive(Component, Default)]
 struct Pipe;
 
+#[derive(Component, Default)]
+struct Collider;
+
 #[derive(Bundle, Default)]
 struct PipeBundle {
     movable: Movable,
-    sprite: SpriteBundle, // for computer visibility and global transform
+    sprite: SpriteBundle, // for computed visibility and global transform
     marker: Pipe,
 }
 
@@ -64,27 +71,37 @@ struct PlayerBundle {
     marker: Player,
 }
 
-fn post_loading(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut bundles: ResMut<LoadingAssets>,
-) {
-    use bevy::asset::LoadState::*;
-    let mut i = 0;
-    while i < bundles.len() {
-        let loaded = bundles[i]
-            .handles
-            .iter()
-            .all(|handle| matches!(asset_server.get_load_state(handle), Loaded));
+#[derive(Resource, Default)]
+struct Score(u32);
 
-        if loaded {
-            let bundle = bundles.remove(i);
-            (bundle.on_load)(bundle.handles, &mut commands);
-        } else {
-            i += 1;
-        }
-    }
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
+enum GameState {
+    #[default]
+    Playing,
+    GameOver,
 }
+
+// fn post_loading(
+//     mut commands: Commands,
+//     asset_server: Res<AssetServer>,
+//     mut bundles: ResMut<LoadingAssets>,
+// ) {
+//     use bevy::asset::LoadState::*;
+//     let mut i = 0;
+//     while i < bundles.len() {
+//         let loaded = bundles[i]
+//             .handles
+//             .iter()
+//             .all(|handle| matches!(asset_server.get_load_state(handle), Loaded));
+
+//         if loaded {
+//             let bundle = bundles.remove(i);
+//             (bundle.on_load)(bundle.handles, &mut commands);
+//         } else {
+//             i += 1;
+//         }
+//     }
+// }
 
 fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2dBundle::default());
@@ -145,35 +162,43 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
             })
             .with_children(|parent| {
                 parent
-                    .spawn(lower_pipe_bundle.clone())
+                    .spawn((lower_pipe_bundle.clone(), Collider))
                     .with_children(|parent| {
                         for i in 0..10 {
-                            parent.spawn(SpriteBundle {
-                                texture: pipe_segment.clone(),
-                                transform: Transform {
-                                    translation: Vec3::NEG_Y
-                                        * pipe_segment_height
-                                        * (1 + 2 * i) as f32
-                                        / 2.0,
+                            parent.spawn((
+                                SpriteBundle {
+                                    texture: pipe_segment.clone(),
+                                    transform: Transform {
+                                        translation: Vec3::NEG_Y
+                                            * pipe_segment_height
+                                            * (1 + 2 * i) as f32
+                                            / 2.0,
+                                        ..default()
+                                    },
                                     ..default()
                                 },
-                                ..default()
-                            });
+                                Collider,
+                            ));
                         }
                     });
                 parent
-                    .spawn(upper_pipe_bundle.clone())
+                    .spawn((upper_pipe_bundle.clone(), Collider))
                     .with_children(|parent| {
                         for i in 0..10 {
-                            parent.spawn(SpriteBundle {
-                                texture: pipe_segment.clone(),
-                                transform: Transform {
-                                    translation: Vec3::Y * pipe_segment_height * (1 + 2 * i) as f32
-                                        / 2.0,
+                            parent.spawn((
+                                SpriteBundle {
+                                    texture: pipe_segment.clone(),
+                                    transform: Transform {
+                                        translation: Vec3::Y
+                                            * pipe_segment_height
+                                            * (1 + 2 * i) as f32
+                                            / 2.0,
+                                        ..default()
+                                    },
                                     ..default()
                                 },
-                                ..default()
-                            });
+                                Collider,
+                            ));
                         }
                     });
             });
@@ -182,6 +207,33 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
     for i in 0..10 {
         spawn_pipe(right_border + i as f32 * PIPE_GAP);
     }
+
+    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+    commands.spawn(
+        TextBundle::from_sections([
+            TextSection::new(
+                "Score: ",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 50.0,
+                    color: Color::BLACK,
+                },
+            ),
+            TextSection::from_style(TextStyle {
+                font,
+                font_size: 50.0,
+                color: Color::BLACK,
+            }),
+        ])
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            margin: UiRect {
+                left: Val::Percent(50.),
+                ..default()
+            },
+            ..default()
+        }),
+    );
 }
 
 fn jump(keyboard_input: Res<Input<KeyCode>>, mut query: Query<&mut Movable, With<Player>>) {
@@ -230,15 +282,76 @@ fn reuse_pipes(mut query: Query<&mut Transform, With<Pipe>>) {
     }
 }
 
+fn check_for_collisions(
+    player_query: Query<(&GlobalTransform, &Handle<Image>), With<Player>>,
+    colliders: Query<(&GlobalTransform, &Handle<Image>), With<Collider>>,
+    images: Res<Assets<Image>>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
+    use bevy::sprite::collide_aabb::*;
+    let (player_transform, player_sprite) = player_query.single();
+    let player_size = images.get(player_sprite).unwrap().size();
+
+    for (transform, sprite) in &colliders {
+        let image = images.get(sprite).unwrap();
+        let collider_size = image.size();
+
+        if collide(
+            player_transform.translation(),
+            player_size,
+            transform.translation(),
+            collider_size,
+        )
+        .is_some()
+        {
+            game_state.set(GameState::GameOver);
+            warn!(
+                "Collision: player={{pos={} size={}}}, collider={{pos={} size={}}}",
+                player_transform.translation(),
+                player_size,
+                transform.translation(),
+                collider_size,
+            );
+        }
+    }
+}
+
+fn check_score(
+    mut pipes: Local<Vec<Entity>>,
+    mut current_pipe: Local<usize>,
+    pipes_query: Query<(Entity, &GlobalTransform), With<Pipe>>,
+    mut score: ResMut<Score>,
+) { if pipes.len() == 0 { let mut sorted = pipes_query
+            .iter()
+            .collect::<Vec<_>>();
+        sorted.sort_unstable_by(|(_, t1), (_, t2)| t1.translation().x.partial_cmp(&t2.translation().x).unwrap());
+        *pipes = sorted
+            .into_iter()
+            .map(|(e, _)| e)
+            .collect();
+        *current_pipe = 0;
+    }
+
+    let Ok((_, pipe_transform)) = pipes_query.get(pipes[*current_pipe]) else {
+        error!("Failed to get current pipe({:?}) from pipes: {:?}", current_pipe, pipes_query);
+        return;
+    };
+
+    if pipe_transform.translation().x < 0.0 {
+        score.0 += 1;
+        *current_pipe = (*current_pipe + 1) % PIPE_COUNT;
+    }
+}
+
+fn set_score_label(score: Res<Score>, mut text: Query<&mut Text>) {
+    let mut text = text.single_mut();
+    text.sections[1].value = score.0.to_string();
+}
+
 fn main() {
     WINDOW_SIZE
         .set(WindowResolution::new(1280.0, 720.0))
         .expect("Could not initialize window resolution");
-    println!(
-        "Width: {}, Height: {}",
-        WINDOW_SIZE.get().unwrap().width(),
-        WINDOW_SIZE.get().unwrap().height(),
-    );
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -250,14 +363,28 @@ fn main() {
             ..default()
         }))
         .add_startup_system(startup)
-        .init_resource::<LoadingAssets>()
-        .add_system(post_loading)
-        .add_systems((
-            jump,
-            apply_acceleration.after(jump),
-            apply_velocity.after(apply_acceleration),
-            rotate.after(apply_acceleration),
-            reuse_pipes,
-        ))
+        .init_resource::<Score>()
+        .add_state::<GameState>()
+        // .init_resource::<LoadingAssets>()
+        // .add_system(post_loading)
+        .add_systems(
+            (
+                jump,
+                apply_acceleration.after(jump),
+                apply_velocity.after(apply_acceleration),
+                rotate.after(apply_acceleration),
+                reuse_pipes,
+                check_for_collisions.run_if(|mut timer: Local<f32>, time: Res<Time>| {
+                    // Tick the timer
+                    *timer += time.delta_seconds();
+                    // Return true if the timer has passed the time
+                    *timer >= 1.0
+                }),
+                check_score,
+                set_score_label.after(check_score).run_if(resource_changed::<Score>()),
+            )
+            .in_set(OnUpdate(GameState::Playing)),
+        )
+        .add_system(bevy::window::close_on_esc)
         .run();
 }
